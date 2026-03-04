@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+  <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+  <meta http-equiv="X-Robots-Tag" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
   <title>Marvell Intern Program Initiative Dashboard</title>
   <link rel="stylesheet" href="styles.css">
   <script src="script.js" defer></script>
@@ -84,8 +87,9 @@
       <section class="panel viz-panel" aria-live="polite" aria-label="Timeline panel">
         <h2>Timeline View</h2>
         <div id="timeline-canvas" class="timeline-canvas">
-          <svg id="timeline-svg" class="timeline-svg" role="img" aria-label="Timeline initiative relationships"></svg>
+          <svg id="timeline-svg-base" class="timeline-svg timeline-svg--base" aria-hidden="true"></svg>
           <div id="timeline-grid" class="timeline-grid"></div>
+          <svg id="timeline-svg-focus" class="timeline-svg timeline-svg--focus" role="img" aria-label="Timeline initiative relationships"></svg>
         </div>
       </section>
 

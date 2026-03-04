@@ -256,6 +256,7 @@ select {
 
 .initiative-card.is-dim {
   opacity: 0.42;
+  filter: grayscale(0.85) saturate(0.4);
 }
 
 .card-select {
@@ -332,14 +333,23 @@ select {
 .timeline-svg {
   position: absolute;
   inset: 0;
-  z-index: 1;
   pointer-events: none;
+}
+
+.timeline-svg--base {
+  z-index: 1;
+}
+
+.timeline-svg--focus {
+  z-index: 3;
 }
 
 .timeline-svg path {
   fill: none;
   stroke-width: 2;
   opacity: 0.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .edge-prerequisite {
@@ -365,8 +375,9 @@ select {
 }
 
 .edge-active {
-  opacity: 0.95 !important;
-  stroke-width: 3 !important;
+  opacity: 1 !important;
+  stroke-width: 3.2 !important;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
 }
 
 .edge-dim {
@@ -435,7 +446,6 @@ select {
 
 .line-swatch--supports {
   border-top-color: var(--green);
-  border-top-style: dashed;
 }
 
 .line-swatch--parallel {

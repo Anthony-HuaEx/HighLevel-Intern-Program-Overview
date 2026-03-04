@@ -539,7 +539,7 @@
   var DEFAULT_STATE = {
     search: "",
     filters: DEFAULT_FILTERS,
-    spotlightId: null,
+    spotlightIds: [],
     expanded: {}
   };
 
@@ -562,7 +562,8 @@
     clearSpotlight: document.getElementById("clear-spotlight"),
     timelineGrid: document.getElementById("timeline-grid"),
     timelineCanvas: document.getElementById("timeline-canvas"),
-    timelineSvg: document.getElementById("timeline-svg"),
+    timelineSvgBase: document.getElementById("timeline-svg-base"),
+    timelineSvgFocus: document.getElementById("timeline-svg-focus"),
     details: document.getElementById("details-content")
   };
 
@@ -571,7 +572,9 @@
   setupFilterOptions();
   bindControls();
   render();
-  window.addEventListener("resize", debounce(drawTimelineConnections, 150));
+  window.addEventListener("resize", debounce(function () {
+    updateFocusVisualization(getVisibleInitiatives());
+  }, 150));
 
   // ── State persistence ──
 
@@ -583,7 +586,7 @@
       return {
         search: typeof parsed.search === "string" ? parsed.search : "",
         filters: mergeFilters(parsed.filters),
-        spotlightId: typeof parsed.spotlightId === "string" ? parsed.spotlightId : null,
+        spotlightIds: normalizeSpotlightIds(parsed),
         expanded: parsed.expanded && typeof parsed.expanded === "object" ? parsed.expanded : {}
       };
     } catch (_) {
@@ -595,9 +598,21 @@
     return {
       search: DEFAULT_STATE.search,
       filters: mergeFilters(DEFAULT_FILTERS),
-      spotlightId: null,
+      spotlightIds: [],
       expanded: {}
     };
+  }
+
+  function normalizeSpotlightIds(parsed) {
+    if (parsed && Array.isArray(parsed.spotlightIds)) {
+      return parsed.spotlightIds.filter(function (id, index, list) {
+        return typeof id === "string" && list.indexOf(id) === index;
+      });
+    }
+    if (parsed && typeof parsed.spotlightId === "string") {
+      return [parsed.spotlightId];
+    }
+    return [];
   }
 
   function mergeFilters(filters) {
@@ -616,7 +631,7 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         search: appState.search,
         filters: appState.filters,
-        spotlightId: appState.spotlightId,
+        spotlightIds: appState.spotlightIds,
         expanded: appState.expanded
       }));
     } catch (_) { /* storage may be unavailable */ }
@@ -691,7 +706,7 @@
 
     refs.clearSpotlight.addEventListener("click", function () {
       transientState.hoverId = null;
-      setState({ spotlightId: null });
+      setState({ spotlightIds: [] });
     });
 
     refs.timelineGrid.addEventListener("click", onCardInteraction);
@@ -707,7 +722,14 @@
     var id = button.getAttribute("data-id");
     if (!id) return;
     if (action === "spotlight") {
-      setState({ spotlightId: appState.spotlightId === id ? null : id });
+      var nextSpotlightIds = appState.spotlightIds.slice();
+      var idx = nextSpotlightIds.indexOf(id);
+      if (idx === -1) {
+        nextSpotlightIds.push(id);
+      } else {
+        nextSpotlightIds.splice(idx, 1);
+      }
+      setState({ spotlightIds: nextSpotlightIds });
     } else if (action === "expand") {
       var expanded = Object.assign({}, appState.expanded);
       expanded[id] = !expanded[id];
@@ -730,7 +752,7 @@
     var id = button.getAttribute("data-id");
     if (id) {
       transientState.hoverId = id;
-      drawTimelineConnections();
+      updateFocusVisualization(getVisibleInitiatives());
     }
   }
 
@@ -738,7 +760,7 @@
     var related = event.relatedTarget;
     if (related && related.closest && related.closest(".initiative-card")) return;
     transientState.hoverId = null;
-    drawTimelineConnections();
+    updateFocusVisualization(getVisibleInitiatives());
   }
 
   // ── State transitions ──
@@ -746,9 +768,11 @@
   function setState(partial) {
     appState = Object.assign({}, appState, partial);
     var visible = getVisibleInitiatives();
-    if (appState.spotlightId && !visible.some(function (item) { return item.id === appState.spotlightId; })) {
-      appState.spotlightId = null;
-    }
+    appState.spotlightIds = normalizeSpotlightIds({ spotlightIds: appState.spotlightIds })
+      .filter(function (id) { return !!byId[id]; });
+    var visibleSet = {};
+    visible.forEach(function (item) { visibleSet[item.id] = true; });
+    appState.spotlightIds = appState.spotlightIds.filter(function (id) { return visibleSet[id]; });
     persistState();
     render();
   }
@@ -799,30 +823,44 @@
 
   function renderSummary(visible) {
     refs.resultsCount.textContent = String(visible.length);
-    if (appState.spotlightId && byId[appState.spotlightId]) {
-      refs.spotlightMeta.textContent = " | Spotlight: " + byId[appState.spotlightId].name;
+    var spotlightItems = getVisibleSpotlights(visible);
+    if (spotlightItems.length === 1) {
+      refs.spotlightMeta.textContent = " | Spotlight: " + spotlightItems[0].name;
+    } else if (spotlightItems.length > 1) {
+      refs.spotlightMeta.textContent = " | Spotlights (" + spotlightItems.length + "): " +
+        spotlightItems.map(function (item) { return item.name; }).join(", ");
     } else {
       refs.spotlightMeta.textContent = "";
     }
   }
 
   function renderDetailsPanel(visible) {
-    if (!appState.spotlightId) {
+    var spotlightItems = getVisibleSpotlights(visible);
+    if (!spotlightItems.length) {
       refs.details.innerHTML = "<div class=\"details-empty\">Select an initiative to inspect timeline context, dependencies, and ownership.</div>";
       return;
     }
-    var item = byId[appState.spotlightId];
-    if (!item || !visible.some(function (c) { return c.id === item.id; })) {
-      refs.details.innerHTML = "<div class=\"details-empty\">Current spotlight is filtered out. Clear filters or choose another initiative.</div>";
+    if (spotlightItems.length === 1) {
+      refs.details.innerHTML = renderSingleSpotlightDetails(visible, spotlightItems[0]);
       return;
     }
+    refs.details.innerHTML = renderMultiSpotlightDetails(visible, spotlightItems);
+  }
+
+  function renderSingleSpotlightDetails(visible, item) {
+    if (!item || !visible.some(function (c) { return c.id === item.id; })) {
+      return "<div class=\"details-empty\">Current spotlight is filtered out. Clear filters or choose another initiative.</div>";
+    }
+    var visibleSet = {};
+    visible.forEach(function (node) { visibleSet[node.id] = true; });
     var incoming = visible.filter(function (c) {
       return c.connections.some(function (conn) { return conn.target === item.id; });
     });
     var outgoing = item.connections
+      .filter(function (conn) { return visibleSet[conn.target]; })
       .map(function (conn) { return byId[conn.target] ? byId[conn.target].name + " (" + conn.type + ")" : null; })
       .filter(Boolean);
-    refs.details.innerHTML = [
+    return [
       "<h3>" + escapeHtml(item.name) + "</h3>",
       "<p>" + escapeHtml(item.description) + "</p>",
       "<p><strong>Phase:</strong> " + escapeHtml(item.phase) + "</p>",
@@ -834,6 +872,48 @@
       "<p><strong>Budget:</strong> " + escapeHtml(item.budget) + "</p>",
       "<p><strong>Outgoing links:</strong> " + (outgoing.length ? escapeHtml(outgoing.join("; ")) : "None") + "</p>",
       "<p><strong>Incoming links:</strong> " + (incoming.length ? escapeHtml(incoming.map(function (x) { return x.name; }).join(", ")) : "None") + "</p>"
+    ].join("");
+  }
+
+  function renderMultiSpotlightDetails(visible, spotlightItems) {
+    var spotlightIds = spotlightItems.map(function (item) { return item.id; });
+    var spotlightSet = {};
+    spotlightIds.forEach(function (id) { spotlightSet[id] = true; });
+    var visibleSet = {};
+    visible.forEach(function (item) { visibleSet[item.id] = true; });
+
+    var outgoingCount = 0;
+    var incomingCount = 0;
+    var typeCounts = {};
+    visible.forEach(function (item) {
+      item.connections.forEach(function (conn) {
+        if (!visibleSet[conn.target]) return;
+        if (spotlightSet[item.id]) {
+          outgoingCount += 1;
+          typeCounts[conn.type] = (typeCounts[conn.type] || 0) + 1;
+        }
+        if (spotlightSet[conn.target]) {
+          incomingCount += 1;
+        }
+      });
+    });
+
+    var focusContext = buildFocusContext(visible, spotlightIds);
+    var relatedNames = Object.keys(focusContext.relatedSet)
+      .filter(function (id) { return !spotlightSet[id] && byId[id]; })
+      .map(function (id) { return byId[id].name; })
+      .sort();
+    var typeSummary = Object.keys(typeCounts).sort().map(function (type) {
+      return type + " (" + typeCounts[type] + ")";
+    });
+
+    return [
+      "<h3>Multi-Spotlight (" + String(spotlightItems.length) + ")</h3>",
+      "<p><strong>Selected initiatives:</strong> " + escapeHtml(spotlightItems.map(function (item) { return item.name; }).join(", ")) + "</p>",
+      "<p><strong>Outgoing links from selected:</strong> " + String(outgoingCount) + "</p>",
+      "<p><strong>Incoming links to selected:</strong> " + String(incomingCount) + "</p>",
+      "<p><strong>Directly related initiatives in view:</strong> " + (relatedNames.length ? escapeHtml(relatedNames.join(", ")) : "None") + "</p>",
+      "<p><strong>Connection types from selected:</strong> " + (typeSummary.length ? escapeHtml(typeSummary.join("; ")) : "None") + "</p>"
     ].join("");
   }
 
@@ -862,17 +942,15 @@
     }).join("");
 
     refs.timelineGrid.innerHTML = html;
-    drawTimelineConnections();
+    updateFocusVisualization(visible);
   }
 
   function renderCard(item) {
-    var activeId = transientState.hoverId || appState.spotlightId;
-    var connected = !activeId || isConnected(item.id, activeId) || item.id === activeId;
-    var isDim = activeId && !connected;
     var expanded = !!appState.expanded[item.id];
+    var isSpotlighted = appState.spotlightIds.indexOf(item.id) !== -1;
     return [
-      "<article class=\"initiative-card " + (isDim ? "is-dim" : "") + "\" data-card-id=\"" + escapeHtml(item.id) + "\" style=\"border-left-color:" + PILLAR_COLOR[item.pillar] + "\">",
-      "<button class=\"card-select\" data-action=\"spotlight\" data-id=\"" + escapeHtml(item.id) + "\" aria-label=\"Spotlight " + escapeHtml(item.name) + "\">",
+      "<article class=\"initiative-card\" data-card-id=\"" + escapeHtml(item.id) + "\" style=\"border-left-color:" + PILLAR_COLOR[item.pillar] + "\">",
+      "<button class=\"card-select\" data-action=\"spotlight\" data-id=\"" + escapeHtml(item.id) + "\" aria-pressed=\"" + String(isSpotlighted) + "\" aria-label=\"Spotlight " + escapeHtml(item.name) + "\">",
       "<h4>" + escapeHtml(item.name) + "</h4>",
       "<div>" + escapeHtml(item.timing) + "</div>",
       "<div class=\"meta-row\">",
@@ -883,7 +961,7 @@
       "</button>",
       "<div class=\"card-actions\">",
       "<button class=\"card-action\" data-action=\"expand\" data-id=\"" + escapeHtml(item.id) + "\" aria-expanded=\"" + String(expanded) + "\">" + (expanded ? "Hide details" : "Expand details") + "</button>",
-      "<button class=\"card-action\" data-action=\"spotlight\" data-id=\"" + escapeHtml(item.id) + "\">" + (appState.spotlightId === item.id ? "Unspotlight" : "Spotlight") + "</button>",
+      "<button class=\"card-action\" data-action=\"spotlight\" data-id=\"" + escapeHtml(item.id) + "\" aria-pressed=\"" + String(isSpotlighted) + "\">" + (isSpotlighted ? "Unspotlight" : "Spotlight") + "</button>",
       "</div>",
       expanded
         ? "<div class=\"card-details\"><div><strong>Stakeholders:</strong> " + escapeHtml(item.stakeholders.join(", ")) + "</div><div><strong>Budget:</strong> " + escapeHtml(item.budget) + "</div><div><strong>Connections:</strong> " + escapeHtml(item.connections.map(function (conn) { return conn.type + " \u2192 " + (byId[conn.target] ? byId[conn.target].name : conn.target); }).join("; ") || "None") + "</div></div>"
@@ -894,51 +972,137 @@
 
   // ── SVG connection lines ──
 
-  function drawTimelineConnections() {
-    var visible = getVisibleInitiatives();
+  function updateFocusVisualization(visible) {
+    var focusContext = buildFocusContext(visible, getActiveFocusIds());
+    applyCardFocusState(focusContext);
+    drawTimelineConnections(visible, focusContext);
+  }
+
+  function drawTimelineConnections(visible, focusContext) {
     var idSet = {};
     visible.forEach(function (item) { idSet[item.id] = true; });
 
     var rect = refs.timelineCanvas.getBoundingClientRect();
     var width = Math.max(refs.timelineGrid.scrollWidth, refs.timelineCanvas.clientWidth);
     var height = Math.max(refs.timelineGrid.scrollHeight, refs.timelineCanvas.clientHeight);
-    refs.timelineSvg.setAttribute("viewBox", "0 0 " + width + " " + height);
-    refs.timelineSvg.setAttribute("width", String(width));
-    refs.timelineSvg.setAttribute("height", String(height));
+    [refs.timelineSvgBase, refs.timelineSvgFocus].forEach(function (svg) {
+      svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+      svg.setAttribute("width", String(width));
+      svg.setAttribute("height", String(height));
+    });
 
-    var activeId = transientState.hoverId || appState.spotlightId;
-    var edgeParts = [];
+    var baseEdgeParts = [];
+    var focusEdgeParts = [];
+    var showAllEdges = !focusContext.hasFocus;
     visible.forEach(function (item) {
       var fromEl = refs.timelineGrid.querySelector("[data-card-id=\"" + cssEscape(item.id) + "\"]");
       if (!fromEl) return;
       var fromRect = fromEl.getBoundingClientRect();
-      var x1 = fromRect.left - rect.left + refs.timelineCanvas.scrollLeft + fromRect.width / 2;
-      var y1 = fromRect.top - rect.top + refs.timelineCanvas.scrollTop + fromRect.height / 2;
       item.connections.forEach(function (conn) {
         if (!idSet[conn.target]) return;
+        var isFocusEdge = !!(focusContext.focusSet[item.id] || focusContext.focusSet[conn.target]);
+        if (!showAllEdges && !isFocusEdge) return;
+
         var toEl = refs.timelineGrid.querySelector("[data-card-id=\"" + cssEscape(conn.target) + "\"]");
         if (!toEl) return;
         var toRect = toEl.getBoundingClientRect();
-        var x2 = toRect.left - rect.left + refs.timelineCanvas.scrollLeft + toRect.width / 2;
-        var y2 = toRect.top - rect.top + refs.timelineCanvas.scrollTop + toRect.height / 2;
-        var curve = Math.abs(x2 - x1) * 0.45 + 40;
-        var path = "M" + x1 + "," + y1 + " C" + (x1 + curve) + "," + y1 + " " + (x2 - curve) + "," + y2 + " " + x2 + "," + y2;
-        var active = !activeId || item.id === activeId || conn.target === activeId || isConnected(item.id, activeId) || isConnected(conn.target, activeId);
-        edgeParts.push("<path class=\"edge-" + conn.type + " " + (active ? "edge-active" : "edge-dim") + "\" d=\"" + path + "\" />");
+
+        var fromCenterX = fromRect.left + fromRect.width / 2;
+        var toCenterX = toRect.left + toRect.width / 2;
+        var forward = toCenterX >= fromCenterX;
+
+        var x1 = (forward ? fromRect.right : fromRect.left) - rect.left + refs.timelineCanvas.scrollLeft;
+        var x2 = (forward ? toRect.left : toRect.right) - rect.left + refs.timelineCanvas.scrollLeft;
+        var y1 = fromRect.top - rect.top + refs.timelineCanvas.scrollTop + fromRect.height / 2 +
+          computeEdgeOffset(item.id + "|" + conn.target + "|" + conn.type, fromRect.height);
+        var y2 = toRect.top - rect.top + refs.timelineCanvas.scrollTop + toRect.height / 2 +
+          computeEdgeOffset(conn.target + "|" + item.id + "|" + conn.type, toRect.height);
+
+        var path = buildReadableEdgePath(x1, y1, x2, y2);
+
+        if (showAllEdges) {
+          baseEdgeParts.push("<path class=\"edge-" + conn.type + "\" d=\"" + path + "\" />");
+        } else {
+          focusEdgeParts.push("<path class=\"edge-" + conn.type + " edge-active\" d=\"" + path + "\" />");
+        }
       });
     });
-    refs.timelineSvg.innerHTML = edgeParts.join("");
+    refs.timelineSvgBase.innerHTML = baseEdgeParts.join("");
+    refs.timelineSvgFocus.innerHTML = focusEdgeParts.join("");
   }
 
   // ── Connectivity helpers ──
 
-  function isConnected(candidateId, activeId) {
-    if (!candidateId || !activeId || !byId[candidateId] || !byId[activeId]) return false;
-    if (candidateId === activeId) return true;
-    var candidate = byId[candidateId];
-    if (candidate.connections.some(function (conn) { return conn.target === activeId; })) return true;
-    var active = byId[activeId];
-    return active.connections.some(function (conn) { return conn.target === candidateId; });
+  function getVisibleSpotlights(visible) {
+    var visibleSet = {};
+    visible.forEach(function (item) { visibleSet[item.id] = true; });
+    return appState.spotlightIds
+      .filter(function (id) { return visibleSet[id] && byId[id]; })
+      .map(function (id) { return byId[id]; });
+  }
+
+  function getActiveFocusIds() {
+    var ids = normalizeSpotlightIds({ spotlightIds: appState.spotlightIds });
+    if (transientState.hoverId && ids.indexOf(transientState.hoverId) === -1) {
+      ids.push(transientState.hoverId);
+    }
+    return ids;
+  }
+
+  function buildFocusContext(visible, activeIds) {
+    var visibleSet = {};
+    visible.forEach(function (item) { visibleSet[item.id] = true; });
+
+    var focusSet = {};
+    activeIds.forEach(function (id) {
+      if (visibleSet[id]) focusSet[id] = true;
+    });
+    var hasFocus = Object.keys(focusSet).length > 0;
+    var relatedSet = {};
+    if (!hasFocus) {
+      return { hasFocus: false, focusSet: focusSet, relatedSet: relatedSet };
+    }
+
+    Object.keys(focusSet).forEach(function (id) { relatedSet[id] = true; });
+    visible.forEach(function (item) {
+      if (focusSet[item.id]) {
+        item.connections.forEach(function (conn) {
+          if (visibleSet[conn.target]) relatedSet[conn.target] = true;
+        });
+      }
+      if (item.connections.some(function (conn) { return focusSet[conn.target]; })) {
+        relatedSet[item.id] = true;
+      }
+    });
+    return { hasFocus: true, focusSet: focusSet, relatedSet: relatedSet };
+  }
+
+  function applyCardFocusState(focusContext) {
+    var cards = refs.timelineGrid.querySelectorAll(".initiative-card");
+    cards.forEach(function (card) {
+      var id = card.getAttribute("data-card-id");
+      var isDim = focusContext.hasFocus && !focusContext.relatedSet[id];
+      card.classList.toggle("is-dim", isDim);
+    });
+  }
+
+  function buildReadableEdgePath(x1, y1, x2, y2) {
+    var midX = x1 + (x2 - x1) * 0.5;
+    return "M" + x1 + "," + y1 + " C" + midX + "," + y1 + " " + midX + "," + y2 + " " + x2 + "," + y2;
+  }
+
+  function computeEdgeOffset(seed, cardHeight) {
+    var hash = 0;
+    for (var i = 0; i < seed.length; i += 1) {
+      hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+      hash |= 0;
+    }
+    var lane = (Math.abs(hash) % 7) - 3; // -3..3 deterministic fan-out
+    var offset = lane * 4;
+    var maxOffset = Math.max(8, Math.floor(cardHeight * 0.3));
+    if (offset > maxOffset) return maxOffset;
+    if (offset < -maxOffset) return -maxOffset;
+    return offset;
   }
 
   // ── Utilities ──
