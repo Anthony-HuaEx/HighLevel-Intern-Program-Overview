@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marvell Intern Program Initiative Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to dashboard content</a>
+
+  <div class="page">
+    <header class="hero" aria-label="Dashboard header">
+      <h1>Marvell Intern Program Initiative Dashboard</h1>
+      <p>
+        Interactive view of the 2026 intern initiative map across Professional Development, Engagement &amp; Community, and Structural Support.
+      </p>
+      <section class="quick-stats" aria-label="Program quick statistics">
+        <div class="quick-stat"><strong>12 Weeks</strong><span>Program Duration</span></div>
+        <div class="quick-stat"><strong>26</strong><span>Mapped Initiatives</span></div>
+        <div class="quick-stat"><strong>3 Pillars</strong><span>Architecture Model</span></div>
+        <div class="quick-stat"><strong>80%+</strong><span>Historical Conversion</span></div>
+      </section>
+    </header>
+
+    <main id="main-content" class="dashboard-layout">
+      <aside class="panel control-panel" aria-label="Filters panel">
+        <h2>Filters</h2>
+
+        <div class="filter-grid">
+          <label for="search-input">
+            Search initiatives
+            <input id="search-input" type="search" placeholder="Search name, stakeholder, tag..." autocomplete="off">
+          </label>
+          <label for="phase-filter">
+            Phase
+            <select id="phase-filter"></select>
+          </label>
+          <label for="pillar-filter">
+            Pillar
+            <select id="pillar-filter"></select>
+          </label>
+          <label for="category-filter">
+            Category
+            <select id="category-filter"></select>
+          </label>
+          <label for="required-filter">
+            Requirement
+            <select id="required-filter">
+              <option value="all">All</option>
+              <option value="required">Required</option>
+              <option value="optional">Optional</option>
+              <option value="varies">Varies</option>
+            </select>
+          </label>
+          <label for="format-filter">
+            Format
+            <select id="format-filter"></select>
+          </label>
+          <label for="connection-filter">
+            Connection type
+            <select id="connection-filter">
+              <option value="all">All</option>
+              <option value="prerequisite">Prerequisite</option>
+              <option value="supports">Supports</option>
+              <option value="parallel">Parallel</option>
+              <option value="feedsInto">Feeds Into</option>
+              <option value="coordinated">Coordinated</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="filter-actions">
+          <button id="clear-filters" class="button">Clear all</button>
+          <button id="clear-spotlight" class="button primary">Clear spotlight</button>
+        </div>
+        <p class="result-meta">
+          Showing <span class="status-badge" id="results-count">0</span> initiatives
+          <span id="spotlight-meta"></span>
+        </p>
+      </aside>
+
+      <section class="panel viz-panel" aria-live="polite" aria-label="Timeline panel">
+        <h2>Timeline View</h2>
+        <div id="timeline-canvas" class="timeline-canvas">
+          <svg id="timeline-svg" class="timeline-svg" role="img" aria-label="Timeline initiative relationships"></svg>
+          <div id="timeline-grid" class="timeline-grid"></div>
+        </div>
+      </section>
+
+      <aside class="panel details-panel" aria-live="polite" aria-label="Initiative details panel">
+        <h2>Initiative Details</h2>
+        <div id="details-content" class="details-empty">Select an initiative to inspect timeline context, dependencies, and ownership.</div>
+      </aside>
+
+      <section class="panel legend-panel" aria-label="Legend panel">
+        <section>
+          <h2>Legend: Pillars</h2>
+          <ul class="legend-list">
+            <li class="legend-item"><span class="swatch" style="background:#6ea8fe"></span>Professional Development</li>
+            <li class="legend-item"><span class="swatch" style="background:#f0a050"></span>Engagement &amp; Community</li>
+            <li class="legend-item"><span class="swatch" style="background:#b070e0"></span>Structural Support</li>
+          </ul>
+        </section>
+        <section>
+          <h2>Legend: Connection Types</h2>
+          <ul class="legend-list">
+            <li class="legend-item"><span class="line-swatch line-swatch--prerequisite"></span>Prerequisite</li>
+            <li class="legend-item"><span class="line-swatch line-swatch--supports"></span>Supports</li>
+            <li class="legend-item"><span class="line-swatch line-swatch--parallel"></span>Parallel</li>
+            <li class="legend-item"><span class="line-swatch line-swatch--feedsInto"></span>Feeds Into</li>
+            <li class="legend-item"><span class="line-swatch line-swatch--coordinated"></span>Coordinated</li>
+          </ul>
+        </section>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      Source model: Marvell Intern Program Initiative Map + Compressed Overview.
+    </footer>
+  </div>
+
+  <noscript>
+    <p class="noscript-note">Enable JavaScript to view the dashboard.</p>
+  </noscript>
+</body>
+</html>
