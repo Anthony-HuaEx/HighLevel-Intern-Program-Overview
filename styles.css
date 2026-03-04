@@ -292,6 +292,22 @@ select {
   color: var(--muted);
 }
 
+.conn-badges {
+  display: flex;
+  gap: 4px;
+  margin-top: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.conn-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  cursor: default;
+}
+
 .card-actions {
   display: flex;
   border-top: 1px solid var(--line);
@@ -346,8 +362,7 @@ select {
 
 .timeline-svg path {
   fill: none;
-  stroke-width: 2;
-  opacity: 0.3;
+  stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -362,7 +377,7 @@ select {
 
 .edge-parallel {
   stroke: var(--light-blue);
-  stroke-dasharray: 5 4;
+  stroke-dasharray: 6 4;
 }
 
 .edge-feedsInto {
@@ -371,17 +386,24 @@ select {
 
 .edge-coordinated {
   stroke: var(--purple);
-  stroke-dasharray: 2 3;
+  stroke-dasharray: 3 3;
 }
 
 .edge-active {
-  opacity: 1 !important;
-  stroke-width: 3.2 !important;
-  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+  opacity: 0.92;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.85));
 }
 
-.edge-dim {
-  opacity: 0.08 !important;
+.edge-label {
+  font-size: 10px;
+  font-weight: 600;
+  font-family: "Segoe UI", Arial, sans-serif;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #0a0f14;
+  stroke-width: 3px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* ── Details Panel ── */

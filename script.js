@@ -20,6 +20,22 @@
     "Structural Support": "#b070e0"
   };
 
+  var CONNECTION_TYPE_COLOR = {
+    prerequisite: "#8fb8ff",
+    supports: "#4fe0b4",
+    parallel: "#5ec4f0",
+    feedsInto: "#f0a050",
+    coordinated: "#b070e0"
+  };
+
+  var CONNECTION_TYPE_LABEL = {
+    prerequisite: "prereq",
+    supports: "supports",
+    parallel: "parallel",
+    feedsInto: "feeds",
+    coordinated: "coord"
+  };
+
   var INITIATIVES = [
     {
       id: "ama-sessions",
@@ -948,6 +964,13 @@
   function renderCard(item) {
     var expanded = !!appState.expanded[item.id];
     var isSpotlighted = appState.spotlightIds.indexOf(item.id) !== -1;
+    var badges = item.connections.map(function (conn) {
+      var color = CONNECTION_TYPE_COLOR[conn.type] || "#888";
+      var targetName = byId[conn.target] ? byId[conn.target].name : conn.target;
+      var label = CONNECTION_TYPE_LABEL[conn.type] || conn.type;
+      return "<span class=\"conn-dot\" style=\"background:" + color + "\" title=\"" +
+        escapeHtml(label + " \u2192 " + targetName) + "\"></span>";
+    }).join("");
     return [
       "<article class=\"initiative-card\" data-card-id=\"" + escapeHtml(item.id) + "\" style=\"border-left-color:" + PILLAR_COLOR[item.pillar] + "\">",
       "<button class=\"card-select\" data-action=\"spotlight\" data-id=\"" + escapeHtml(item.id) + "\" aria-pressed=\"" + String(isSpotlighted) + "\" aria-label=\"Spotlight " + escapeHtml(item.name) + "\">",
@@ -958,6 +981,7 @@
       "<span class=\"chip\">" + escapeHtml(item.format) + "</span>",
       "<span class=\"chip\">" + escapeHtml(item.category) + "</span>",
       "</div>",
+      badges ? "<div class=\"conn-badges\">" + badges + "</div>" : "",
       "</button>",
       "<div class=\"card-actions\">",
       "<button class=\"card-action\" data-action=\"expand\" data-id=\"" + escapeHtml(item.id) + "\" aria-expanded=\"" + String(expanded) + "\">" + (expanded ? "Hide details" : "Expand details") + "</button>",
@@ -979,9 +1003,6 @@
   }
 
   function drawTimelineConnections(visible, focusContext) {
-    var idSet = {};
-    visible.forEach(function (item) { idSet[item.id] = true; });
-
     var rect = refs.timelineCanvas.getBoundingClientRect();
     var width = Math.max(refs.timelineGrid.scrollWidth, refs.timelineCanvas.clientWidth);
     var height = Math.max(refs.timelineGrid.scrollHeight, refs.timelineCanvas.clientHeight);
@@ -991,44 +1012,78 @@
       svg.setAttribute("height", String(height));
     });
 
-    var baseEdgeParts = [];
-    var focusEdgeParts = [];
-    var showAllEdges = !focusContext.hasFocus;
+    refs.timelineSvgBase.innerHTML = "";
+
+    if (!focusContext.hasFocus) {
+      refs.timelineSvgFocus.innerHTML = "";
+      return;
+    }
+
+    var idSet = {};
+    visible.forEach(function (item) { idSet[item.id] = true; });
+
+    var defs = "<defs>";
+    Object.keys(CONNECTION_TYPE_COLOR).forEach(function (type) {
+      var color = CONNECTION_TYPE_COLOR[type];
+      defs += "<marker id=\"arrow-" + type + "\" markerWidth=\"8\" markerHeight=\"6\" " +
+        "refX=\"7\" refY=\"3\" orient=\"auto\" markerUnits=\"strokeWidth\">" +
+        "<path d=\"M0,0 L8,3 L0,6\" fill=\"" + color + "\" /></marker>";
+    });
+    defs += "</defs>";
+
+    var edgeParts = [];
+    var labelParts = [];
+    var edgeIndex = 0;
+    var scrollLeft = refs.timelineCanvas.scrollLeft;
+    var scrollTop = refs.timelineCanvas.scrollTop;
+
     visible.forEach(function (item) {
-      var fromEl = refs.timelineGrid.querySelector("[data-card-id=\"" + cssEscape(item.id) + "\"]");
-      if (!fromEl) return;
-      var fromRect = fromEl.getBoundingClientRect();
       item.connections.forEach(function (conn) {
         if (!idSet[conn.target]) return;
-        var isFocusEdge = !!(focusContext.focusSet[item.id] || focusContext.focusSet[conn.target]);
-        if (!showAllEdges && !isFocusEdge) return;
+        if (!focusContext.focusSet[item.id] && !focusContext.focusSet[conn.target]) return;
 
+        var fromEl = refs.timelineGrid.querySelector("[data-card-id=\"" + cssEscape(item.id) + "\"]");
         var toEl = refs.timelineGrid.querySelector("[data-card-id=\"" + cssEscape(conn.target) + "\"]");
-        if (!toEl) return;
+        if (!fromEl || !toEl) return;
+
+        var fromRect = fromEl.getBoundingClientRect();
         var toRect = toEl.getBoundingClientRect();
 
-        var fromCenterX = fromRect.left + fromRect.width / 2;
-        var toCenterX = toRect.left + toRect.width / 2;
-        var forward = toCenterX >= fromCenterX;
+        var fromCX = fromRect.left + fromRect.width / 2;
+        var toCX = toRect.left + toRect.width / 2;
+        var forward = toCX >= fromCX;
 
-        var x1 = (forward ? fromRect.right : fromRect.left) - rect.left + refs.timelineCanvas.scrollLeft;
-        var x2 = (forward ? toRect.left : toRect.right) - rect.left + refs.timelineCanvas.scrollLeft;
-        var y1 = fromRect.top - rect.top + refs.timelineCanvas.scrollTop + fromRect.height / 2 +
-          computeEdgeOffset(item.id + "|" + conn.target + "|" + conn.type, fromRect.height);
-        var y2 = toRect.top - rect.top + refs.timelineCanvas.scrollTop + toRect.height / 2 +
-          computeEdgeOffset(conn.target + "|" + item.id + "|" + conn.type, toRect.height);
+        var x1 = (forward ? fromRect.right : fromRect.left) - rect.left + scrollLeft;
+        var x2 = (forward ? toRect.left : toRect.right) - rect.left + scrollLeft;
+        var y1 = fromRect.top - rect.top + scrollTop + fromRect.height * 0.5;
+        var y2 = toRect.top - rect.top + scrollTop + toRect.height * 0.5;
 
-        var path = buildReadableEdgePath(x1, y1, x2, y2);
+        var jitter = (edgeIndex % 5 - 2) * 6;
+        y1 += jitter;
+        y2 += jitter;
 
-        if (showAllEdges) {
-          baseEdgeParts.push("<path class=\"edge-" + conn.type + "\" d=\"" + path + "\" />");
-        } else {
-          focusEdgeParts.push("<path class=\"edge-" + conn.type + " edge-active\" d=\"" + path + "\" />");
-        }
+        var midX = x1 + (x2 - x1) * 0.5;
+        var pathD = "M" + x1 + "," + y1 + " C" + midX + "," + y1 + " " + midX + "," + y2 + " " + x2 + "," + y2;
+        var color = CONNECTION_TYPE_COLOR[conn.type] || "#888";
+
+        edgeParts.push(
+          "<path class=\"edge-" + conn.type + " edge-active\" d=\"" + pathD +
+          "\" marker-end=\"url(#arrow-" + conn.type + ")\" />"
+        );
+
+        var labelX = x1 + (x2 - x1) * 0.5;
+        var labelY = y1 + (y2 - y1) * 0.5 - 8;
+        var label = CONNECTION_TYPE_LABEL[conn.type] || conn.type;
+        labelParts.push(
+          "<text class=\"edge-label\" x=\"" + labelX + "\" y=\"" + labelY +
+          "\" fill=\"" + color + "\">" + escapeHtml(label) + "</text>"
+        );
+
+        edgeIndex += 1;
       });
     });
-    refs.timelineSvgBase.innerHTML = baseEdgeParts.join("");
-    refs.timelineSvgFocus.innerHTML = focusEdgeParts.join("");
+
+    refs.timelineSvgFocus.innerHTML = defs + edgeParts.join("") + labelParts.join("");
   }
 
   // ── Connectivity helpers ──
@@ -1084,25 +1139,6 @@
       var isDim = focusContext.hasFocus && !focusContext.relatedSet[id];
       card.classList.toggle("is-dim", isDim);
     });
-  }
-
-  function buildReadableEdgePath(x1, y1, x2, y2) {
-    var midX = x1 + (x2 - x1) * 0.5;
-    return "M" + x1 + "," + y1 + " C" + midX + "," + y1 + " " + midX + "," + y2 + " " + x2 + "," + y2;
-  }
-
-  function computeEdgeOffset(seed, cardHeight) {
-    var hash = 0;
-    for (var i = 0; i < seed.length; i += 1) {
-      hash = ((hash << 5) - hash) + seed.charCodeAt(i);
-      hash |= 0;
-    }
-    var lane = (Math.abs(hash) % 7) - 3; // -3..3 deterministic fan-out
-    var offset = lane * 4;
-    var maxOffset = Math.max(8, Math.floor(cardHeight * 0.3));
-    if (offset > maxOffset) return maxOffset;
-    if (offset < -maxOffset) return -maxOffset;
-    return offset;
   }
 
   // ── Utilities ──
